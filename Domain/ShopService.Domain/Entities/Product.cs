@@ -5,64 +5,51 @@ using ShopService.ValueObjects;
 namespace ShopService.Domain.Entities;
 
 /// <summary>
-/// Товар, размещенный продавцом.
+/// Товар, размещённый продавцом.
 /// </summary>
-public class Product : Entity<int>
+public class Product : Entity<Guid>
 {
-    private readonly ICollection<Favorite> _favorites = new List<Favorite>();
-    private readonly ICollection<ProductPromotion> _productPromotions = new List<ProductPromotion>();
+    private readonly ICollection<Favorite> _favorites = [];
+    private readonly ICollection<ProductPromotion> _productPromotions = [];
 
-    public Name Name { get; private set; }
-    public string? Description { get; private set; }
-    public Price Price { get; private set; }
+    public Name Name { get; private set; } = default!;
+    public Description? Description { get; private set; }
+    public Price Price { get; private set; } = default!;
+    public Seller Seller { get; private set; } = default!;
 
-    public int SellerId { get; private set; }
-    public Seller Seller { get; private set; }
+    public IReadOnlyCollection<Favorite> Favorites => _favorites.ToList().AsReadOnly();
 
-    public IReadOnlyCollection<Favorite> Favorites
-        => _favorites.ToList().AsReadOnly();
-
-    public IReadOnlyCollection<ProductPromotion> ProductPromotions
-        => _productPromotions.ToList().AsReadOnly();
-
-    private Product(int id, Name name, string? description, Price price, int sellerId)
-        : base(id)
-    {
-        Name = name;
-        Description = description;
-        Price = price;
-        SellerId = sellerId;
-        Seller = null!;
-    }
+    public IReadOnlyCollection<ProductPromotion> ProductPromotions => _productPromotions.ToList().AsReadOnly();
 
     protected Product()
     {
-        Name = null!;
-        Price = null!;
-        Seller = null!;
     }
 
-    internal Product(Seller seller, Name name, string? description, Price price)
-        : this(default, name, description, price, seller?.Id ?? default)
+    internal Product(Seller seller, Name name, Description? description, Price price)
+        : this(Guid.NewGuid(), seller, name, description, price)
     {
-        if (seller is null) throw new ArgumentNullValueException(nameof(seller));
-        if (name is null) throw new ArgumentNullValueException(nameof(name));
-        if (price is null) throw new ArgumentNullValueException(nameof(price));
-
-        Seller = seller;
     }
 
-    /// <summary>
-    /// Редактирует данные товара.
-    /// </summary>
-    public void Edit(Name name, string? description, Price price)
+    protected Product(Guid id, Seller seller, Name name, Description? description, Price price)
+        : base(id)
+    {
+        Seller = seller ?? throw new ArgumentNullValueException(nameof(seller));
+        Name = name ?? throw new ArgumentNullValueException(nameof(name));
+        Price = price ?? throw new ArgumentNullValueException(nameof(price));
+        Description = description;
+    }
+
+    internal bool Edit(Name name, Description? description, Price price)
     {
         if (name is null) throw new ArgumentNullValueException(nameof(name));
         if (price is null) throw new ArgumentNullValueException(nameof(price));
+
+        var changed = Name != name || Description != description || Price != price;
+        if (!changed) return false;
 
         Name = name;
         Description = description;
         Price = price;
+        return true;
     }
 }
-

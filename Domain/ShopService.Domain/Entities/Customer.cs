@@ -7,30 +7,27 @@ namespace ShopService.Domain.Entities;
 /// <summary>
 /// Покупатель, который может просматривать каталог и добавлять товары в избранное.
 /// </summary>
-public class Customer : Entity<int>
+public class Customer : Entity<Guid>
 {
-    private readonly ICollection<Favorite> _favorites = new List<Favorite>();
+    private readonly ICollection<Favorite> _favorites = [];
 
-    public Name Name { get; private set; }
+    public Name Name { get; private set; } = default!;
 
-    public IReadOnlyCollection<Favorite> Favorites
-        => _favorites.ToList().AsReadOnly();
-
-    private Customer(int id, Name name)
-        : base(id)
-    {
-        Name = name;
-    }
+    public IReadOnlyCollection<Favorite> Favorites => _favorites.ToList().AsReadOnly();
 
     protected Customer()
     {
-        Name = null!;
     }
 
     public Customer(Name name)
-        : this(default, name)
+        : this(Guid.NewGuid(), name)
     {
-        if (name is null) throw new ArgumentNullValueException(nameof(name));
+    }
+
+    protected Customer(Guid id, Name name)
+        : base(id)
+    {
+        Name = name ?? throw new ArgumentNullValueException(nameof(name));
     }
 
     /// <summary>
@@ -40,8 +37,8 @@ public class Customer : Entity<int>
     {
         if (product is null) throw new ArgumentNullValueException(nameof(product));
 
-        if (_favorites.Any(x => x.ProductId == product.Id))
-            throw new FavoriteAlreadyExistsException(Id, product.Id);
+        if (_favorites.Any(x => x.Product == product))
+            throw new FavoriteAlreadyExistsException(this, product);
 
         var favorite = new Favorite(this, product);
         _favorites.Add(favorite);
@@ -56,11 +53,10 @@ public class Customer : Entity<int>
     {
         if (product is null) throw new ArgumentNullValueException(nameof(product));
 
-        var favorite = _favorites.FirstOrDefault(x => x.ProductId == product.Id);
+        var favorite = _favorites.FirstOrDefault(x => x.Product == product);
         if (favorite is null)
-            throw new FavoriteNotFoundException(Id, product.Id);
+            throw new FavoriteNotFoundException(this, product);
 
         _favorites.Remove(favorite);
     }
 }
-

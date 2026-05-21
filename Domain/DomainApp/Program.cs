@@ -1,15 +1,10 @@
 ﻿using ShopService.Domain.Entities;
 using ShopService.ValueObjects;
 
-var customers = new Dictionary<int, Customer>();
-var sellers = new Dictionary<int, Seller>();
-var products = new Dictionary<int, Product>();
-var promotions = new Dictionary<int, Promotion>();
-
-var nextCustomerId = 1;
-var nextSellerId = 1;
-var nextProductId = 1;
-var nextPromotionId = 1;
+var customers = new List<Customer>();
+var sellers = new List<Seller>();
+var products = new List<Product>();
+var promotions = new List<Promotion>();
 
 while (true)
 {
@@ -28,13 +23,13 @@ while (true)
 
 void CustomerMode()
 {
-    var customerId = EnsureCustomer();
-    var customer = customers[customerId];
+    var customer = EnsureCustomer();
 
     while (true)
     {
         Console.Clear();
-        Console.WriteLine($"=== Покупатель #{customerId} ({customer.Name.Value}) ===");
+        Console.WriteLine($"=== Покупатель ({customer.Name.Value}) ===");
+        Console.WriteLine($"Id: {customer.Id}");
         Console.WriteLine("1. Просмотр каталога товаров");
         Console.WriteLine("2. Поиск товаров по названию");
         Console.WriteLine("3. Просмотр акций и скидок");
@@ -57,17 +52,12 @@ void CustomerMode()
             Console.Write("Строка поиска: ");
             var q = (Console.ReadLine() ?? string.Empty).Trim();
             var matches = products
-                .Where(x => x.Value.Name.Value.Contains(q, StringComparison.OrdinalIgnoreCase))
+                .Where(p => p.Name.Value.Contains(q, StringComparison.OrdinalIgnoreCase))
                 .ToList();
 
             Console.WriteLine();
             if (matches.Count == 0) Console.WriteLine("Ничего не найдено.");
-            else
-            {
-                foreach (var (id, p) in matches)
-                    Console.WriteLine($"- #{id}: {p.Name.Value} | {p.Price.Value} | seller={GetSellerIdForProduct(p)}");
-            }
-
+            else PrintProductList(matches);
             Pause();
         }
         else if (choice == "3")
@@ -78,8 +68,7 @@ void CustomerMode()
         else if (choice == "4")
         {
             PrintCatalog();
-            var pid = ReadInt("ID товара: ");
-            if (!products.TryGetValue(pid, out var product))
+            if (!TryPickProduct(ReadInt("Номер товара в списке: "), out var product))
             {
                 Console.WriteLine("Товар не найден.");
                 Pause();
@@ -99,9 +88,8 @@ void CustomerMode()
         }
         else if (choice == "5")
         {
-            PrintFavorites(customerId);
-            var pid = ReadInt("ID товара: ");
-            if (!products.TryGetValue(pid, out var product))
+            PrintFavorites(customer);
+            if (!TryPickProduct(ReadInt("Номер товара в списке: "), out var product))
             {
                 Console.WriteLine("Товар не найден.");
                 Pause();
@@ -121,7 +109,7 @@ void CustomerMode()
         }
         else if (choice == "6")
         {
-            PrintFavorites(customerId);
+            PrintFavorites(customer);
             Pause();
         }
     }
@@ -129,13 +117,13 @@ void CustomerMode()
 
 void SellerMode()
 {
-    var sellerId = EnsureSeller();
-    var seller = sellers[sellerId];
+    var seller = EnsureSeller();
 
     while (true)
     {
         Console.Clear();
-        Console.WriteLine($"=== Продавец #{sellerId} ({seller.Name.Value}) ===");
+        Console.WriteLine($"=== Продавец ({seller.Name.Value}) ===");
+        Console.WriteLine($"Id: {seller.Id}");
         Console.WriteLine("1. Добавить товар");
         Console.WriteLine("2. Редактировать товар");
         Console.WriteLine("3. Удалить товар (из каталога DomainApp)");
@@ -156,20 +144,19 @@ void SellerMode()
             Console.Write("Название товара: ");
             var name = new Name(Console.ReadLine() ?? string.Empty);
             Console.Write("Описание (можно пусто): ");
-            var desc = Console.ReadLine();
+            var desc = ToDescription(Console.ReadLine());
             var price = ReadDecimal("Цена: ");
 
             var product = seller.CreateProduct(name, desc, new Price(price));
-            products[nextProductId] = product;
-            Console.WriteLine($"Товар добавлен. ID (DomainApp) = {nextProductId}");
-            nextProductId++;
+            products.Add(product);
+            Console.WriteLine($"Товар добавлен. Id = {product.Id}");
             Pause();
         }
         else if (choice == "2")
         {
-            PrintSellerProducts(sellerId);
-            var pid = ReadInt("ID товара: ");
-            if (!products.TryGetValue(pid, out var product) || GetSellerIdForProduct(product) != sellerId)
+            var sellerProducts = products.Where(p => p.Seller == seller).ToList();
+            PrintProductList(sellerProducts);
+            if (!TryPickFromList(sellerProducts, ReadInt("Номер товара: "), out var product))
             {
                 Console.WriteLine("Товар не найден у этого продавца.");
                 Pause();
@@ -179,24 +166,32 @@ void SellerMode()
             Console.Write("Новое название: ");
             var name = new Name(Console.ReadLine() ?? string.Empty);
             Console.Write("Новое описание (можно пусто): ");
-            var desc = Console.ReadLine();
+            var desc = ToDescription(Console.ReadLine());
             var price = ReadDecimal("Новая цена: ");
-            product.Edit(name, desc, new Price(price));
-            Console.WriteLine("Товар обновлен.");
+
+            try
+            {
+                seller.EditProduct(seller, product, name, desc, new Price(price));
+                Console.WriteLine("Товар обновлен.");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.Message);
+            }
             Pause();
         }
         else if (choice == "3")
         {
-            PrintSellerProducts(sellerId);
-            var pid = ReadInt("ID товара: ");
-            if (!products.TryGetValue(pid, out var product) || GetSellerIdForProduct(product) != sellerId)
+            var sellerProducts = products.Where(p => p.Seller == seller).ToList();
+            PrintProductList(sellerProducts);
+            if (!TryPickFromList(sellerProducts, ReadInt("Номер товара: "), out var product))
             {
                 Console.WriteLine("Товар не найден у этого продавца.");
                 Pause();
                 continue;
             }
 
-            products.Remove(pid);
+            products.Remove(product);
             Console.WriteLine("Товар удален из каталога DomainApp.");
             Pause();
         }
@@ -215,16 +210,15 @@ void SellerMode()
             var end = ReadOptionalUtc("Дата конца (UTC, Enter чтобы пусто): ");
 
             var promotion = seller.CreatePromotion(title, desc, discount, start, end);
-            promotions[nextPromotionId] = promotion;
-            Console.WriteLine($"Акция создана. ID (DomainApp) = {nextPromotionId}");
-            nextPromotionId++;
+            promotions.Add(promotion);
+            Console.WriteLine($"Акция создана. Id = {promotion.Id}");
             Pause();
         }
         else if (choice == "5")
         {
-            PrintSellerPromotions(sellerId);
-            var promoId = ReadInt("ID акции: ");
-            if (!promotions.TryGetValue(promoId, out var promo) || GetSellerIdForPromotion(promo) != sellerId)
+            var sellerPromos = promotions.Where(p => p.Seller == seller).ToList();
+            PrintPromotionList(sellerPromos);
+            if (!TryPickFromList(sellerPromos, ReadInt("Номер акции: "), out var promo))
             {
                 Console.WriteLine("Акция не найдена у этого продавца.");
                 Pause();
@@ -243,15 +237,22 @@ void SellerMode()
             var start = ReadOptionalUtc("Дата начала (UTC, Enter чтобы пусто): ");
             var end = ReadOptionalUtc("Дата конца (UTC, Enter чтобы пусто): ");
 
-            promo.Edit(title, desc, discount, start, end);
-            Console.WriteLine("Акция обновлена.");
+            try
+            {
+                seller.EditPromotion(seller, promo, title, desc, discount, start, end);
+                Console.WriteLine("Акция обновлена.");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.Message);
+            }
             Pause();
         }
         else if (choice == "6")
         {
-            PrintSellerPromotions(sellerId);
-            var promoId = ReadInt("ID акции: ");
-            if (!promotions.TryGetValue(promoId, out var promo) || GetSellerIdForPromotion(promo) != sellerId)
+            var sellerPromos = promotions.Where(p => p.Seller == seller).ToList();
+            PrintPromotionList(sellerPromos);
+            if (!TryPickFromList(sellerPromos, ReadInt("Номер акции: "), out var promo))
             {
                 Console.WriteLine("Акция не найдена у этого продавца.");
                 Pause();
@@ -259,24 +260,31 @@ void SellerMode()
             }
 
             var end = ReadUtc("Дата завершения (UTC): ");
-            promo.End(end);
-            Console.WriteLine("Акция завершена.");
+            try
+            {
+                seller.EndPromotion(seller, promo, end);
+                Console.WriteLine("Акция завершена.");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.Message);
+            }
             Pause();
         }
         else if (choice == "7")
         {
-            PrintSellerProducts(sellerId);
-            var pid = ReadInt("ID товара: ");
-            if (!products.TryGetValue(pid, out var product) || GetSellerIdForProduct(product) != sellerId)
+            var sellerProducts = products.Where(p => p.Seller == seller).ToList();
+            PrintProductList(sellerProducts);
+            if (!TryPickFromList(sellerProducts, ReadInt("Номер товара: "), out var product))
             {
                 Console.WriteLine("Товар не найден у этого продавца.");
                 Pause();
                 continue;
             }
 
-            PrintSellerPromotions(sellerId);
-            var promoId = ReadInt("ID акции: ");
-            if (!promotions.TryGetValue(promoId, out var promo) || GetSellerIdForPromotion(promo) != sellerId)
+            var sellerPromos = promotions.Where(p => p.Seller == seller).ToList();
+            PrintPromotionList(sellerPromos);
+            if (!TryPickFromList(sellerPromos, ReadInt("Номер акции: "), out var promo))
             {
                 Console.WriteLine("Акция не найдена у этого продавца.");
                 Pause();
@@ -285,7 +293,7 @@ void SellerMode()
 
             try
             {
-                seller.AddProductToPromotion(product, promo);
+                seller.AddProductToPromotion(seller, product, promo);
                 Console.WriteLine("Товар привязан к акции.");
             }
             catch (Exception ex)
@@ -296,74 +304,66 @@ void SellerMode()
         }
         else if (choice == "8")
         {
-            PrintSellerProducts(sellerId);
+            PrintProductList(products.Where(p => p.Seller == seller).ToList());
             Pause();
         }
         else if (choice == "9")
         {
-            PrintSellerPromotions(sellerId);
+            PrintPromotionList(promotions.Where(p => p.Seller == seller).ToList());
             Pause();
         }
     }
 }
 
-int EnsureCustomer()
+Customer EnsureCustomer()
 {
     if (customers.Count == 0)
     {
         Console.Write("Создай покупателя. Имя: ");
-        customers[nextCustomerId] = new Customer(new Name(Console.ReadLine() ?? string.Empty));
-        nextCustomerId++;
+        customers.Add(new Customer(new Name(Console.ReadLine() ?? string.Empty)));
     }
 
     Console.WriteLine();
     Console.WriteLine("Покупатели:");
-    foreach (var (id, c) in customers)
-        Console.WriteLine($"- #{id}: {c.Name.Value}");
+    for (var i = 0; i < customers.Count; i++)
+        Console.WriteLine($"{i + 1}. {customers[i].Name.Value} ({customers[i].Id})");
 
-    var selected = ReadInt("Выбери ID покупателя: ");
-    if (!customers.ContainsKey(selected))
+    var selected = ReadInt("Выбери номер покупателя: ");
+    if (selected > customers.Count)
     {
         Console.Write("Имя нового покупателя: ");
-        customers[nextCustomerId] = new Customer(new Name(Console.ReadLine() ?? string.Empty));
-        selected = nextCustomerId;
-        nextCustomerId++;
+        var c = new Customer(new Name(Console.ReadLine() ?? string.Empty));
+        customers.Add(c);
+        return c;
     }
 
-    return selected;
+    return customers[selected - 1];
 }
 
-int EnsureSeller()
+Seller EnsureSeller()
 {
     if (sellers.Count == 0)
     {
         Console.Write("Создай продавца. Имя: ");
-        sellers[nextSellerId] = new Seller(new Name(Console.ReadLine() ?? string.Empty));
-        nextSellerId++;
+        sellers.Add(new Seller(new Name(Console.ReadLine() ?? string.Empty)));
     }
 
     Console.WriteLine();
     Console.WriteLine("Продавцы:");
-    foreach (var (id, s) in sellers)
-        Console.WriteLine($"- #{id}: {s.Name.Value}");
+    for (var i = 0; i < sellers.Count; i++)
+        Console.WriteLine($"{i + 1}. {sellers[i].Name.Value} ({sellers[i].Id})");
 
-    var selected = ReadInt("Выбери ID продавца: ");
-    if (!sellers.ContainsKey(selected))
+    var selected = ReadInt("Выбери номер продавца: ");
+    if (selected > sellers.Count)
     {
         Console.Write("Имя нового продавца: ");
-        sellers[nextSellerId] = new Seller(new Name(Console.ReadLine() ?? string.Empty));
-        selected = nextSellerId;
-        nextSellerId++;
+        var s = new Seller(new Name(Console.ReadLine() ?? string.Empty));
+        sellers.Add(s);
+        return s;
     }
 
-    return selected;
+    return sellers[selected - 1];
 }
-
-int GetSellerIdForProduct(Product product)
-    => sellers.First(x => ReferenceEquals(x.Value, product.Seller)).Key;
-
-int GetSellerIdForPromotion(Promotion promotion)
-    => sellers.First(x => ReferenceEquals(x.Value, promotion.Seller)).Key;
 
 void PrintCatalog()
 {
@@ -375,8 +375,7 @@ void PrintCatalog()
     }
 
     Console.WriteLine("Каталог:");
-    foreach (var (id, p) in products)
-        Console.WriteLine($"- #{id}: {p.Name.Value} | {p.Price.Value} | seller={GetSellerIdForProduct(p)}");
+    PrintProductList(products);
 }
 
 void PrintPromotions()
@@ -389,59 +388,75 @@ void PrintPromotions()
     }
 
     Console.WriteLine("Акции:");
-    foreach (var (id, promo) in promotions)
-    {
-        var discount = promo.Discount?.Value.ToString() ?? "нет";
-        Console.WriteLine($"- #{id}: {promo.Title.Value} | скидка={discount}% | seller={GetSellerIdForPromotion(promo)}");
-    }
+    PrintPromotionList(promotions);
 }
 
-void PrintSellerProducts(int sellerId)
+void PrintProductList(IReadOnlyList<Product> list)
 {
-    Console.WriteLine();
-    Console.WriteLine("Мои товары:");
-    var list = products.Where(x => GetSellerIdForProduct(x.Value) == sellerId).ToList();
     if (list.Count == 0)
     {
         Console.WriteLine("Нет товаров.");
         return;
     }
-    foreach (var (id, p) in list)
-        Console.WriteLine($"- #{id}: {p.Name.Value} | {p.Price.Value}");
+
+    for (var i = 0; i < list.Count; i++)
+    {
+        var p = list[i];
+        var desc = p.Description?.Value ?? "—";
+        Console.WriteLine($"{i + 1}. {p.Name.Value} | {p.Price.Value} | {desc} | seller={p.Seller.Name.Value}");
+    }
 }
 
-void PrintSellerPromotions(int sellerId)
+void PrintPromotionList(IReadOnlyList<Promotion> list)
 {
-    Console.WriteLine();
-    Console.WriteLine("Мои акции:");
-    var list = promotions.Where(x => GetSellerIdForPromotion(x.Value) == sellerId).ToList();
     if (list.Count == 0)
     {
         Console.WriteLine("Нет акций.");
         return;
     }
-    foreach (var (id, p) in list)
+
+    for (var i = 0; i < list.Count; i++)
     {
+        var p = list[i];
         var discount = p.Discount?.Value.ToString() ?? "нет";
-        Console.WriteLine($"- #{id}: {p.Title.Value} | скидка={discount}%");
+        Console.WriteLine($"{i + 1}. {p.Title.Value} | скидка={discount}% | seller={p.Seller.Name.Value}");
     }
 }
 
-void PrintFavorites(int customerId)
+void PrintFavorites(Customer customer)
 {
     Console.WriteLine();
     Console.WriteLine("Избранное:");
-    var customer = customers[customerId];
-    var favProductRefs = customer.Favorites.Select(x => x.Product).ToHashSet();
-    var list = products.Where(x => favProductRefs.Contains(x.Value)).ToList();
-    if (list.Count == 0)
+    if (customer.Favorites.Count == 0)
     {
         Console.WriteLine("Избранное пусто.");
         return;
     }
-    foreach (var (id, p) in list)
-        Console.WriteLine($"- #{id}: {p.Name.Value} | {p.Price.Value}");
+
+    var favProducts = customer.Favorites.Select(f => f.Product).ToList();
+    PrintProductList(favProducts);
 }
+
+bool TryPickProduct(int index, out Product product)
+{
+    if (!TryPickFromList(products, index, out product)) return false;
+    return true;
+}
+
+bool TryPickFromList<T>(IReadOnlyList<T> list, int oneBasedIndex, out T item)
+{
+    if (oneBasedIndex < 1 || oneBasedIndex > list.Count)
+    {
+        item = default!;
+        return false;
+    }
+
+    item = list[oneBasedIndex - 1];
+    return true;
+}
+
+Description? ToDescription(string? text)
+    => string.IsNullOrWhiteSpace(text) ? null : new Description(text);
 
 int ReadInt(string label)
 {

@@ -22,8 +22,8 @@ public class CustomersController(ApplicationDbContext context) : ControllerBase
         }));
     }
 
-    [HttpGet("{id:int}")]
-    public async Task<IActionResult> GetById([FromRoute] int id, CancellationToken cancellationToken)
+    [HttpGet("{id:guid}")]
+    public async Task<IActionResult> GetById([FromRoute] Guid id, CancellationToken cancellationToken)
     {
         var item = await context.Customers.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (item is null) return NotFound();

@@ -11,26 +11,24 @@ public class FavoriteConfiguration : IEntityTypeConfiguration<Favorite>
         builder.ToTable("favorites");
 
         builder.HasKey(x => x.Id);
-        builder.Property(x => x.Id)
-            .HasColumnName("id")
-            .UseIdentityByDefaultColumn();
+        builder.Property(x => x.Id).HasColumnName("id").IsRequired();
 
-        builder.Property(x => x.CustomerId)
-            .HasColumnName("customer_id");
+        builder.Property<Guid>("CustomerId")
+            .HasColumnName("customer_id")
+            .IsRequired();
 
-        builder.Property(x => x.ProductId)
-            .HasColumnName("product_id");
+        builder.Property<Guid>("ProductId")
+            .HasColumnName("product_id")
+            .IsRequired();
 
-        builder.HasIndex(x => new { x.CustomerId, x.ProductId })
-            .IsUnique();
+        builder.HasIndex("CustomerId", "ProductId").IsUnique();
 
         builder.HasOne(x => x.Customer)
             .WithMany("_favorites")
-            .HasForeignKey(x => x.CustomerId);
+            .HasForeignKey("CustomerId");
 
         builder.HasOne(x => x.Product)
             .WithMany("_favorites")
-            .HasForeignKey(x => x.ProductId);
+            .HasForeignKey("ProductId");
     }
 }
-

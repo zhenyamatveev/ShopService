@@ -7,48 +7,21 @@ namespace ShopService.Domain.Entities;
 /// <summary>
 /// Акция/скидка продавца.
 /// </summary>
-public class Promotion : Entity<int>
+public class Promotion : Entity<Guid>
 {
-    private readonly ICollection<ProductPromotion> _productPromotions = new List<ProductPromotion>();
+    private readonly ICollection<ProductPromotion> _productPromotions = [];
 
-    public Title Title { get; private set; }
+    public Title Title { get; private set; } = default!;
     public string? Description { get; private set; }
     public Discount? Discount { get; private set; }
-
-    public int SellerId { get; private set; }
-    public Seller Seller { get; private set; }
-
+    public Seller Seller { get; private set; } = default!;
     public DateTime? StartDate { get; private set; }
     public DateTime? EndDate { get; private set; }
 
-    public IReadOnlyCollection<ProductPromotion> ProductPromotions
-        => _productPromotions.ToList().AsReadOnly();
-
-    private Promotion(
-        int id,
-        Title title,
-        string? description,
-        Discount? discount,
-        int sellerId,
-        DateTime? startDateUtc,
-        DateTime? endDateUtc
-    )
-        : base(id)
-    {
-        Title = title;
-        Description = description;
-        Discount = discount;
-        SellerId = sellerId;
-        Seller = null!;
-
-        StartDate = EnsureUtc(startDateUtc);
-        EndDate = EnsureUtc(endDateUtc);
-    }
+    public IReadOnlyCollection<ProductPromotion> ProductPromotions => _productPromotions.ToList().AsReadOnly();
 
     protected Promotion()
     {
-        Title = null!;
-        Seller = null!;
     }
 
     internal Promotion(
@@ -59,17 +32,32 @@ public class Promotion : Entity<int>
         DateTime? startDateUtc,
         DateTime? endDateUtc
     )
-        : this(default, title, description, discount, seller?.Id ?? default, startDateUtc, endDateUtc)
+        : this(Guid.NewGuid(), seller, title, description, discount, startDateUtc, endDateUtc)
     {
-        if (seller is null) throw new ArgumentNullValueException(nameof(seller));
-        if (title is null) throw new ArgumentNullValueException(nameof(title));
-
-        ValidateDates(startDateUtc, endDateUtc);
-
-        Seller = seller;
     }
 
-    public void Edit(
+    protected Promotion(
+        Guid id,
+        Seller seller,
+        Title title,
+        string? description,
+        Discount? discount,
+        DateTime? startDateUtc,
+        DateTime? endDateUtc
+    )
+        : base(id)
+    {
+        Seller = seller ?? throw new ArgumentNullValueException(nameof(seller));
+        Title = title ?? throw new ArgumentNullValueException(nameof(title));
+        Description = description;
+        Discount = discount;
+
+        ValidateDates(startDateUtc, endDateUtc);
+        StartDate = EnsureUtc(startDateUtc);
+        EndDate = EnsureUtc(endDateUtc);
+    }
+
+    internal bool Edit(
         Title title,
         string? description,
         Discount? discount,
@@ -81,25 +69,40 @@ public class Promotion : Entity<int>
 
         ValidateDates(startDateUtc, endDateUtc);
 
+        var changed =
+            Title != title
+            || Description != description
+            || Discount != discount
+            || StartDate != EnsureUtc(startDateUtc)
+            || EndDate != EnsureUtc(endDateUtc);
+
+        if (!changed) return false;
+
         Title = title;
         Description = description;
         Discount = discount;
         StartDate = EnsureUtc(startDateUtc);
         EndDate = EnsureUtc(endDateUtc);
+        return true;
     }
 
-    public void End(DateTime endDateUtc)
+    internal bool End(DateTime endDateUtc)
     {
         ValidateDates(StartDate, endDateUtc);
-        EndDate = EnsureUtc(endDateUtc);
+        var utcEnd = EnsureUtc(endDateUtc);
+        if (EndDate == utcEnd) return false;
+        EndDate = utcEnd;
+        return true;
     }
 
     internal ProductPromotion AddProduct(Product product)
     {
         if (product is null) throw new ArgumentNullValueException(nameof(product));
 
-        if (_productPromotions.Any(x => x.ProductId == product.Id))
-            throw new InvalidOperationException($"Product {product.Id} already attached to promotion {Id}.");
+        if (_productPromotions.Any(x => x.Product == product))
+            throw new InvalidOperationException(
+                $"Товар «{product.Name.Value}» (id = {product.Id}) уже привязан к акции «{Title.Value}» (id = {Id})."
+            );
 
         var link = new ProductPromotion(product, this);
         _productPromotions.Add(link);
@@ -120,4 +123,3 @@ public class Promotion : Entity<int>
             throw new PromotionDateRangeException(startDateUtc, endDateUtc);
     }
 }
-

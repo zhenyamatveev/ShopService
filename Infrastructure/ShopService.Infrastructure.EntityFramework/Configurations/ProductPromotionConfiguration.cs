@@ -11,29 +11,24 @@ public class ProductPromotionConfiguration : IEntityTypeConfiguration<ProductPro
         builder.ToTable("product_promotions");
 
         builder.HasKey(x => x.Id);
-        builder.Property(x => x.Id)
-            .HasColumnName("id")
-            .UseIdentityByDefaultColumn();
+        builder.Property(x => x.Id).HasColumnName("id").IsRequired();
 
-        builder.Property(x => x.ProductId)
-            .HasColumnName("product_id");
+        builder.Property<Guid>("ProductId")
+            .HasColumnName("product_id")
+            .IsRequired();
 
-        builder.Property(x => x.PromotionId)
-            .HasColumnName("promotion_id");
+        builder.Property<Guid>("PromotionId")
+            .HasColumnName("promotion_id")
+            .IsRequired();
 
-        builder.Ignore(x => x.Product);
-        builder.Ignore(x => x.Promotion);
-
-        builder.HasIndex(x => new { x.ProductId, x.PromotionId })
-            .IsUnique();
+        builder.HasIndex("ProductId", "PromotionId").IsUnique();
 
         builder.HasOne(x => x.Product)
             .WithMany("_productPromotions")
-            .HasForeignKey(x => x.ProductId);
+            .HasForeignKey("ProductId");
 
         builder.HasOne(x => x.Promotion)
             .WithMany("_productPromotions")
-            .HasForeignKey(x => x.PromotionId);
+            .HasForeignKey("PromotionId");
     }
 }
-

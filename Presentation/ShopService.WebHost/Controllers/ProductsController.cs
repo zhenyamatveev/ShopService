@@ -1,10 +1,9 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using ShopService.Domain.Entities;
-using ShopService.Domain.Exceptions;
 using ShopService.Infrastructure.EntityFramework;
 using ShopService.ValueObjects;
 using ShopService.WebHost.Contracts.Products;
+using ShopService.WebHost.Helpers;
 
 namespace ShopService.WebHost.Controllers;
 
@@ -28,25 +27,27 @@ public class ProductsController(ApplicationDbContext context) : ControllerBase
         {
             x.Id,
             Name = x.Name.Value,
-            x.Description,
+            Description = x.Description?.Value,
             Price = x.Price.Value,
-            x.SellerId
+            SellerId = EF.Property<Guid>(x, "SellerId"),
+            SellerName = x.Seller.Name.Value
         }));
     }
 
-    [HttpGet("{id:int}")]
-    public async Task<IActionResult> GetById([FromRoute] int id, CancellationToken cancellationToken)
+    [HttpGet("{id:guid}")]
+    public async Task<IActionResult> GetById([FromRoute] Guid id, CancellationToken cancellationToken)
     {
-        var item = await context.Products.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        var item = await context.Products.AsNoTracking().Include(x => x.Seller).FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (item is null) return NotFound();
 
         return Ok(new
         {
             item.Id,
             Name = item.Name.Value,
-            item.Description,
+            Description = item.Description?.Value,
             Price = item.Price.Value,
-            item.SellerId
+            SellerId = EF.Property<Guid>(item, "SellerId"),
+            SellerName = item.Seller.Name.Value
         });
     }
 
@@ -56,7 +57,10 @@ public class ProductsController(ApplicationDbContext context) : ControllerBase
         var seller = await context.Sellers.FirstOrDefaultAsync(x => x.Id == request.SellerId, cancellationToken);
         if (seller is null) return NotFound(new { message = "Seller not found." });
 
-        var product = seller.CreateProduct(new Name(request.Name), request.Description, new Price(request.Price));
+        var product = seller.CreateProduct(
+            new Name(request.Name),
+            ValueObjectMapping.ToDescription(request.Description),
+            new Price(request.Price));
         context.Products.Add(product);
         await context.SaveChangesAsync(cancellationToken);
 
@@ -64,33 +68,43 @@ public class ProductsController(ApplicationDbContext context) : ControllerBase
         {
             product.Id,
             Name = product.Name.Value,
-            product.Description,
+            Description = product.Description?.Value,
             Price = product.Price.Value,
-            product.SellerId
+            SellerId = seller.Id
         });
     }
 
-    [HttpPut("{id:int}")]
-    public async Task<IActionResult> Update([FromRoute] int id, [FromBody] UpdateProductRequest request, CancellationToken cancellationToken)
+    [HttpPut("{id:guid}")]
+    public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] UpdateProductRequest request, CancellationToken cancellationToken)
     {
-        var product = await context.Products.Include(x => x.Seller).FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        var seller = await context.Sellers
+            .Include("_products")
+            .FirstOrDefaultAsync(x => x.Id == request.SellerId, cancellationToken);
+        if (seller is null) return NotFound(new { message = "Seller not found." });
+
+        var product = await context.Products.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (product is null) return NotFound();
 
-        product.Edit(new Name(request.Name), request.Description, new Price(request.Price));
+        seller.EditProduct(
+            seller,
+            product,
+            new Name(request.Name),
+            ValueObjectMapping.ToDescription(request.Description),
+            new Price(request.Price));
         await context.SaveChangesAsync(cancellationToken);
 
         return Ok(new
         {
             product.Id,
             Name = product.Name.Value,
-            product.Description,
+            Description = product.Description?.Value,
             Price = product.Price.Value,
-            product.SellerId
+            SellerId = seller.Id
         });
     }
 
-    [HttpDelete("{id:int}")]
-    public async Task<IActionResult> Delete([FromRoute] int id, CancellationToken cancellationToken)
+    [HttpDelete("{id:guid}")]
+    public async Task<IActionResult> Delete([FromRoute] Guid id, CancellationToken cancellationToken)
     {
         var product = await context.Products.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (product is null) return NotFound();
@@ -101,4 +115,3 @@ public class ProductsController(ApplicationDbContext context) : ControllerBase
         return NoContent();
     }
 }
-

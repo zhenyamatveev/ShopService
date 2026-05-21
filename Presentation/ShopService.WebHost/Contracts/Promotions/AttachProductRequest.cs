@@ -1,4 +1,3 @@
 namespace ShopService.WebHost.Contracts.Promotions;
 
-public record AttachProductRequest(int ProductId);
-
+public record AttachProductRequest(Guid SellerId, Guid ProductId);

@@ -4,39 +4,26 @@ using ShopService.Domain.Exceptions;
 namespace ShopService.Domain.Entities;
 
 /// <summary>
-/// Избранное (связка покупатель - товар).
+/// Избранное (связка покупатель — товар).
 /// </summary>
-public class Favorite : Entity<int>
+public class Favorite : Entity<Guid>
 {
-    public int CustomerId { get; private set; }
-    public Customer Customer { get; private set; }
-
-    public int ProductId { get; private set; }
-    public Product Product { get; private set; }
-
-    private Favorite(int id, int customerId, int productId)
-        : base(id)
-    {
-        CustomerId = customerId;
-        ProductId = productId;
-        Customer = null!;
-        Product = null!;
-    }
+    public Customer Customer { get; private set; } = default!;
+    public Product Product { get; private set; } = default!;
 
     protected Favorite()
     {
-        Customer = null!;
-        Product = null!;
     }
 
     internal Favorite(Customer customer, Product product)
-        : this(default, customer?.Id ?? default, product?.Id ?? default)
+        : this(Guid.NewGuid(), customer, product)
     {
-        if (customer is null) throw new ArgumentNullValueException(nameof(customer));
-        if (product is null) throw new ArgumentNullValueException(nameof(product));
+    }
 
-        Customer = customer;
-        Product = product;
+    private Favorite(Guid id, Customer customer, Product product)
+        : base(id)
+    {
+        Customer = customer ?? throw new ArgumentNullValueException(nameof(customer));
+        Product = product ?? throw new ArgumentNullValueException(nameof(product));
     }
 }
-

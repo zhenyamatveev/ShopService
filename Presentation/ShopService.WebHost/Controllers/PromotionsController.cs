@@ -13,23 +13,23 @@ public class PromotionsController(ApplicationDbContext context) : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetAll(CancellationToken cancellationToken)
     {
-        var items = await context.Promotions.AsNoTracking().ToListAsync(cancellationToken);
+        var items = await context.Promotions.AsNoTracking().Include(x => x.Seller).ToListAsync(cancellationToken);
         return Ok(items.Select(x => new
         {
             x.Id,
             Title = x.Title.Value,
             x.Description,
             Discount = x.Discount == null ? (decimal?)null : x.Discount.Value,
-            x.SellerId,
+            SellerId = EF.Property<Guid>(x, "SellerId"),
             x.StartDate,
             x.EndDate
         }));
     }
 
-    [HttpGet("{id:int}")]
-    public async Task<IActionResult> GetById([FromRoute] int id, CancellationToken cancellationToken)
+    [HttpGet("{id:guid}")]
+    public async Task<IActionResult> GetById([FromRoute] Guid id, CancellationToken cancellationToken)
     {
-        var item = await context.Promotions.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        var item = await context.Promotions.AsNoTracking().Include(x => x.Seller).FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (item is null) return NotFound();
 
         return Ok(new
@@ -38,7 +38,7 @@ public class PromotionsController(ApplicationDbContext context) : ControllerBase
             Title = item.Title.Value,
             item.Description,
             Discount = item.Discount == null ? (decimal?)null : item.Discount.Value,
-            item.SellerId,
+            SellerId = EF.Property<Guid>(item, "SellerId"),
             item.StartDate,
             item.EndDate
         });
@@ -56,8 +56,7 @@ public class PromotionsController(ApplicationDbContext context) : ControllerBase
             request.Description,
             discount,
             request.StartDateUtc,
-            request.EndDateUtc
-        );
+            request.EndDateUtc);
 
         context.Promotions.Add(promotion);
         await context.SaveChangesAsync(cancellationToken);
@@ -68,26 +67,32 @@ public class PromotionsController(ApplicationDbContext context) : ControllerBase
             Title = promotion.Title.Value,
             promotion.Description,
             Discount = promotion.Discount == null ? (decimal?)null : promotion.Discount.Value,
-            promotion.SellerId,
+            SellerId = seller.Id,
             promotion.StartDate,
             promotion.EndDate
         });
     }
 
-    [HttpPut("{id:int}")]
-    public async Task<IActionResult> Update([FromRoute] int id, [FromBody] UpdatePromotionRequest request, CancellationToken cancellationToken)
+    [HttpPut("{id:guid}")]
+    public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] UpdatePromotionRequest request, CancellationToken cancellationToken)
     {
-        var promotion = await context.Promotions.Include(x => x.Seller).FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        var seller = await context.Sellers
+            .Include("_promotions")
+            .FirstOrDefaultAsync(x => x.Id == request.SellerId, cancellationToken);
+        if (seller is null) return NotFound(new { message = "Seller not found." });
+
+        var promotion = await context.Promotions.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (promotion is null) return NotFound();
 
         Discount? discount = request.Discount is null ? null : new Discount(request.Discount.Value);
-        promotion.Edit(
+        seller.EditPromotion(
+            seller,
+            promotion,
             new Title(request.Title),
             request.Description,
             discount,
             request.StartDateUtc,
-            request.EndDateUtc
-        );
+            request.EndDateUtc);
 
         await context.SaveChangesAsync(cancellationToken);
         return Ok(new
@@ -96,40 +101,56 @@ public class PromotionsController(ApplicationDbContext context) : ControllerBase
             Title = promotion.Title.Value,
             promotion.Description,
             Discount = promotion.Discount == null ? (decimal?)null : promotion.Discount.Value,
-            promotion.SellerId,
+            SellerId = seller.Id,
             promotion.StartDate,
             promotion.EndDate
         });
     }
 
-    [HttpPost("{id:int}/end")]
-    public async Task<IActionResult> End([FromRoute] int id, [FromBody] EndPromotionRequest request, CancellationToken cancellationToken)
+    [HttpPost("{id:guid}/end")]
+    public async Task<IActionResult> End(
+        [FromRoute] Guid id,
+        [FromBody] EndPromotionRequest request,
+        CancellationToken cancellationToken)
     {
+        var seller = await context.Sellers
+            .Include("_promotions")
+            .FirstOrDefaultAsync(x => x.Id == request.SellerId, cancellationToken);
+        if (seller is null) return NotFound(new { message = "Seller not found." });
+
         var promotion = await context.Promotions.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (promotion is null) return NotFound();
 
-        promotion.End(request.EndDateUtc);
+        seller.EndPromotion(seller, promotion, request.EndDateUtc);
         await context.SaveChangesAsync(cancellationToken);
 
         return Ok();
     }
 
-    [HttpPost("{id:int}/attach-product")]
-    public async Task<IActionResult> AttachProduct([FromRoute] int id, [FromBody] AttachProductRequest request, CancellationToken cancellationToken)
+    [HttpPost("{id:guid}/attach-product")]
+    public async Task<IActionResult> AttachProduct([FromRoute] Guid id, [FromBody] AttachProductRequest request, CancellationToken cancellationToken)
     {
-        var promotion = await context.Promotions.Include(x => x.Seller).FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        var seller = await context.Sellers
+            .Include("_products")
+            .Include("_promotions")
+            .FirstOrDefaultAsync(x => x.Id == request.SellerId, cancellationToken);
+        if (seller is null) return NotFound(new { message = "Seller not found." });
+
+        var promotion = await context.Promotions.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (promotion is null) return NotFound(new { message = "Promotion not found." });
 
-        var seller = await context.Sellers.FirstAsync(x => x.Id == promotion.SellerId, cancellationToken);
-
-        var product = await context.Products.Include(x => x.Seller).FirstOrDefaultAsync(x => x.Id == request.ProductId, cancellationToken);
+        var product = await context.Products.FirstOrDefaultAsync(x => x.Id == request.ProductId, cancellationToken);
         if (product is null) return NotFound(new { message = "Product not found." });
 
-        var link = seller.AddProductToPromotion(product, promotion);
+        var link = seller.AddProductToPromotion(seller, product, promotion);
         context.ProductPromotions.Add(link);
         await context.SaveChangesAsync(cancellationToken);
 
-        return Ok(new { link.Id, link.ProductId, link.PromotionId });
+        return Ok(new
+        {
+            link.Id,
+            ProductId = product.Id,
+            PromotionId = promotion.Id
+        });
     }
 }
-

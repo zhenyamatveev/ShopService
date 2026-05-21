@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using ShopService.Domain.Entities;
 using ShopService.ValueObjects;
+using ShopService.ValueObjects.Validators;
 
 namespace ShopService.Infrastructure.EntityFramework.Configurations;
 
@@ -12,46 +13,45 @@ public class ProductConfiguration : IEntityTypeConfiguration<Product>
         builder.ToTable("products");
 
         builder.HasKey(x => x.Id);
-        builder.Property(x => x.Id)
-            .HasColumnName("id")
-            .UseIdentityByDefaultColumn();
+        builder.Property(x => x.Id).HasColumnName("id").IsRequired();
 
         builder.Property(x => x.Name)
             .HasColumnName("name")
-            .HasMaxLength(100)
-            .HasConversion(
-                v => v.Value,
-                v => new Name(v)
-            );
+            .IsRequired()
+            .HasConversion(v => v.Value, v => new Name(v))
+            .HasMaxLength(NameValidator.MAX_LENGTH);
 
         builder.Property(x => x.Description)
-            .HasColumnName("description");
+            .HasColumnName("description")
+            .IsRequired(false)
+            .HasConversion(
+                d => d == null ? null : d.Value,
+                s => s == null ? null : new Description(s))
+            .HasMaxLength(DescriptionValidator.MAX_LENGTH);
 
         builder.Property(x => x.Price)
             .HasColumnName("price")
+            .IsRequired()
             .HasPrecision(10, 2)
-            .HasConversion(
-                v => v.Value,
-                v => new Price(v)
-            );
+            .HasConversion(v => v.Value, v => new Price(v));
 
-        builder.Property(x => x.SellerId)
-            .HasColumnName("seller_id");
+        builder.Property<Guid>("SellerId")
+            .HasColumnName("seller_id")
+            .IsRequired();
 
         builder.Ignore(x => x.Favorites);
         builder.Ignore(x => x.ProductPromotions);
 
         builder.HasOne(x => x.Seller)
             .WithMany("_products")
-            .HasForeignKey(x => x.SellerId);
+            .HasForeignKey("SellerId");
 
         builder.HasMany<Favorite>("_favorites")
             .WithOne(x => x.Product)
-            .HasForeignKey(x => x.ProductId);
+            .HasForeignKey("ProductId");
 
         builder.HasMany<ProductPromotion>("_productPromotions")
             .WithOne(x => x.Product)
-            .HasForeignKey(x => x.ProductId);
+            .HasForeignKey("ProductId");
     }
 }
-

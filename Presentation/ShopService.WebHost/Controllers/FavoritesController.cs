@@ -9,27 +9,29 @@ namespace ShopService.WebHost.Controllers;
 [Route("api/[controller]")]
 public class FavoritesController(ApplicationDbContext context) : ControllerBase
 {
-    [HttpGet("by-customer/{customerId:int}")]
-    public async Task<IActionResult> GetByCustomer([FromRoute] int customerId, CancellationToken cancellationToken)
+    [HttpGet("by-customer/{customerId:guid}")]
+    public async Task<IActionResult> GetByCustomer([FromRoute] Guid customerId, CancellationToken cancellationToken)
     {
         var favorites = await context.Favorites
             .AsNoTracking()
             .Include(x => x.Product)
-            .Where(x => x.CustomerId == customerId)
+            .ThenInclude(p => p.Seller)
+            .Where(x => EF.Property<Guid>(x, "CustomerId") == customerId)
             .ToListAsync(cancellationToken);
 
         return Ok(favorites.Select(x => new
         {
             x.Id,
-            x.CustomerId,
-            x.ProductId,
+            CustomerId = EF.Property<Guid>(x, "CustomerId"),
+            ProductId = x.Product.Id,
             Product = new
             {
                 x.Product.Id,
                 Name = x.Product.Name.Value,
-                x.Product.Description,
+                Description = x.Product.Description?.Value,
                 Price = x.Product.Price.Value,
-                x.Product.SellerId
+                SellerId = EF.Property<Guid>(x.Product, "SellerId"),
+                SellerName = x.Product.Seller.Name.Value
             }
         }));
     }
@@ -49,11 +51,19 @@ public class FavoritesController(ApplicationDbContext context) : ControllerBase
         context.Favorites.Add(favorite);
         await context.SaveChangesAsync(cancellationToken);
 
-        return Ok(new { favorite.Id, favorite.CustomerId, favorite.ProductId });
+        return Ok(new
+        {
+            favorite.Id,
+            CustomerId = request.CustomerId,
+            ProductId = product.Id
+        });
     }
 
     [HttpDelete]
-    public async Task<IActionResult> Remove([FromQuery] int customerId, [FromQuery] int productId, CancellationToken cancellationToken)
+    public async Task<IActionResult> Remove(
+        [FromQuery] Guid customerId,
+        [FromQuery] Guid productId,
+        CancellationToken cancellationToken)
     {
         var customer = await context.Customers
             .Include("_favorites")
@@ -66,7 +76,9 @@ public class FavoritesController(ApplicationDbContext context) : ControllerBase
         customer.RemoveFromFavorites(product);
 
         var favoriteRow = await context.Favorites
-            .FirstOrDefaultAsync(x => x.CustomerId == customerId && x.ProductId == productId, cancellationToken);
+            .FirstOrDefaultAsync(
+                x => EF.Property<Guid>(x, "CustomerId") == customerId && EF.Property<Guid>(x, "ProductId") == productId,
+                cancellationToken);
 
         if (favoriteRow is not null)
         {
@@ -77,4 +89,3 @@ public class FavoritesController(ApplicationDbContext context) : ControllerBase
         return NoContent();
     }
 }
-

@@ -6,37 +6,24 @@ namespace ShopService.Domain.Entities;
 /// <summary>
 /// Связка товара и акции (m:n).
 /// </summary>
-public class ProductPromotion : Entity<int>
+public class ProductPromotion : Entity<Guid>
 {
-    public int ProductId { get; private set; }
-    public Product Product { get; private set; }
-
-    public int PromotionId { get; private set; }
-    public Promotion Promotion { get; private set; }
-
-    private ProductPromotion(int id, int productId, int promotionId)
-        : base(id)
-    {
-        ProductId = productId;
-        PromotionId = promotionId;
-        Product = null!;
-        Promotion = null!;
-    }
+    public Product Product { get; private set; } = default!;
+    public Promotion Promotion { get; private set; } = default!;
 
     protected ProductPromotion()
     {
-        Product = null!;
-        Promotion = null!;
     }
 
     internal ProductPromotion(Product product, Promotion promotion)
-        : this(default, product?.Id ?? default, promotion?.Id ?? default)
+        : this(Guid.NewGuid(), product, promotion)
     {
-        if (product is null) throw new ArgumentNullValueException(nameof(product));
-        if (promotion is null) throw new ArgumentNullValueException(nameof(promotion));
+    }
 
-        Product = product;
-        Promotion = promotion;
+    private ProductPromotion(Guid id, Product product, Promotion promotion)
+        : base(id)
+    {
+        Product = product ?? throw new ArgumentNullValueException(nameof(product));
+        Promotion = promotion ?? throw new ArgumentNullValueException(nameof(promotion));
     }
 }
-
